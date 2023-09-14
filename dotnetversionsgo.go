@@ -51,7 +51,7 @@ func main() {
 }
 
 func writeVersion(version string, spLevel string) {
-    version = strings.Trim(version, " \t\n\r")
+    version = strings.TrimSpace(version)
     if version == "" {
         return
     }
@@ -65,7 +65,7 @@ func writeVersion(version string, spLevel string) {
 }
 
 func get1To45VersionFromRegistry() {
-    const subkey string = "SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\"
+    const subkey = `SOFTWARE\Microsoft\NET Framework Setup\NDP\`
 
     k, err := registry.OpenKey(registry.LOCAL_MACHINE, subkey, registry.READ)
     if err != nil {
@@ -86,70 +86,72 @@ func get1To45VersionFromRegistry() {
             continue
         }
 
-        if strings.HasPrefix(versionKeyName, "v") {
-            versionKey, err := registry.OpenKey(registry.LOCAL_MACHINE, subkey+versionKeyName, registry.READ)
-            defer versionKey.Close()
+        if !strings.HasPrefix(versionKeyName, "v") {
+            continue
+        }
 
-            var name string
-            var install string
-            var sp string
+        versionKey, err := registry.OpenKey(registry.LOCAL_MACHINE, subkey+versionKeyName, registry.READ)
+        defer versionKey.Close()
 
-            name, _, err = versionKey.GetStringValue("Version")
-            spUint, _, err := versionKey.GetIntegerValue("SP")
-            if err == nil {
-                sp = strconv.FormatUint(spUint, 10)
+        var name string
+        var install string
+        var sp string
+
+        name, _, err = versionKey.GetStringValue("Version")
+        spUint, _, err := versionKey.GetIntegerValue("SP")
+        if err == nil {
+            sp = strconv.FormatUint(spUint, 10)
+        }
+
+        installUint, _, err := versionKey.GetIntegerValue("Install")
+        if err == nil {
+            install = strconv.FormatUint(installUint, 10)
+        }
+
+        if install == "" {
+            writeVersion(name, "")
+        } else {
+            if sp != "" && install == "1" {
+                writeVersion(name, sp)
             }
+        }
 
-            installUint, _, err := versionKey.GetIntegerValue("Install")
-            if err == nil {
-                install = strconv.FormatUint(installUint, 10)
-            }
+        if name != "" {
+            continue
+        }
 
-            if install == "" {
-                writeVersion(name, "")
-            } else {
-                if sp != "" && install == "1" {
-                    writeVersion(name, sp)
+        vers, err := versionKey.ReadSubKeyNames(-1)
+        if err == nil {
+            for _, subKeyName := range vers {
+                subKey, err := registry.OpenKey(registry.LOCAL_MACHINE, subkey+versionKeyName+"\\"+subKeyName, registry.READ)
+                if err != nil {
+                    continue
                 }
-            }
+                defer subKey.Close()
 
-            if name != "" {
-                continue
-            }
+                sp = ""
+                install = ""
+                name, _, err = subKey.GetStringValue("Version")
 
-            vers, err := versionKey.ReadSubKeyNames(-1)
-            if err == nil {
-                for _, subKeyName := range vers {
-                    subKey, err := registry.OpenKey(registry.LOCAL_MACHINE, subkey+versionKeyName+"\\"+subKeyName, registry.READ)
-                    if err != nil {
-                        continue
-                    }
-                    defer subKey.Close()
-
-                    sp = ""
-                    install = ""
-                    name, _, err = subKey.GetStringValue("Version")
-
-                    if name != "" {
-                        spUint, _, err := versionKey.GetIntegerValue("SP")
-                        if err == nil {
-                            sp = strconv.FormatUint(spUint, 10)
-                        }
-                    }
-
-                    installUint, _, err := versionKey.GetIntegerValue("Install")
+                if name != "" {
+                    spUint, _, err := versionKey.GetIntegerValue("SP")
                     if err == nil {
-                        install = strconv.FormatUint(installUint, 10)
+                        sp = strconv.FormatUint(spUint, 10)
                     }
+                }
 
-                    if install == "" {
+                installUint, _, err := versionKey.GetIntegerValue("Install")
+                if err == nil {
+                    install = strconv.FormatUint(installUint, 10)
+                }
+
+                if install == "" {
+                    writeVersion(name, "")
+                } else {
+                    if sp != "" && install == "1" {
+                        writeVersion(name, sp)
+                    } else if install == "1" {
                         writeVersion(name, "")
-                    } else {
-                        if sp != "" && install == "1" {
-                            writeVersion(name, sp)
-                        } else if install == "1" {
-                            writeVersion(name, "")
-                        }
                     }
                 }
             }
