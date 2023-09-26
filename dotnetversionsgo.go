@@ -185,7 +185,7 @@ func get45PlusFromRegistry() {
 
 func checkFor45PlusVersion(releaseKey int) string {
     switch {
-    case releaseKey >= 533325:
+    case releaseKey >= 533320:
         return "4.8.1"
     case releaseKey >= 528040:
         return "4.8"
