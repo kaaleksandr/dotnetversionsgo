@@ -4,9 +4,11 @@ import (
     "flag"
     "fmt"
     "os"
+    "path/filepath"
     "strconv"
     "strings"
 
+    "github.com/blang/semver/v4"
     "golang.org/x/sys/windows/registry"
 )
 
@@ -43,6 +45,8 @@ func main() {
     get1To45VersionFromRegistry()
     get45PlusFromRegistry()
 
+    getCoreSdkRuntimes()
+
     fmt.Println()
 
     if !batchMode {
@@ -50,7 +54,7 @@ func main() {
     }
 }
 
-func writeVersion(version string, spLevel string) {
+func writeDotnetClassicVersion(version string, spLevel string) {
     version = strings.TrimSpace(version)
     if version == "" {
         return
@@ -109,10 +113,10 @@ func get1To45VersionFromRegistry() {
         }
 
         if install == "" {
-            writeVersion(name, "")
+            writeDotnetClassicVersion(name, "")
         } else {
             if sp != "" && install == "1" {
-                writeVersion(name, sp)
+                writeDotnetClassicVersion(name, sp)
             }
         }
 
@@ -146,12 +150,12 @@ func get1To45VersionFromRegistry() {
                 }
 
                 if install == "" {
-                    writeVersion(name, "")
+                    writeDotnetClassicVersion(name, "")
                 } else {
                     if sp != "" && install == "1" {
-                        writeVersion(name, sp)
+                        writeDotnetClassicVersion(name, sp)
                     } else if install == "1" {
-                        writeVersion(name, "")
+                        writeDotnetClassicVersion(name, "")
                     }
                 }
             }
@@ -173,12 +177,12 @@ func get45PlusFromRegistry() {
     val, _, err := k.GetStringValue("Version")
 
     if err == nil {
-        writeVersion(val, "")
+        writeDotnetClassicVersion(val, "")
     } else {
         rel, _, err := k.GetIntegerValue("Release")
 
         if err == nil {
-            writeVersion(checkFor45PlusVersion(int(rel)), "")
+            writeDotnetClassicVersion(checkFor45PlusVersion(int(rel)), "")
         }
     }
 }
@@ -209,5 +213,101 @@ func checkFor45PlusVersion(releaseKey int) string {
         return "4.5"
     default:
         return ""
+    }
+}
+
+func writeDotnetCoreVersion(version string, location string) {
+    version = strings.TrimSpace(version)
+    if version == "" {
+        return
+    }
+
+    fmt.Println(version, location)
+}
+
+func fileExists(filename string) bool {
+    info, err := os.Stat(filename)
+    if os.IsNotExist(err) {
+        return false
+    }
+    return !info.IsDir()
+}
+
+func getCoreSdkRuntimes() {
+    const dotnet = "dotnet.exe"
+    uniqueDotnetInstallDirs := make(map[string]interface{})
+
+    // 1
+    dotNetInstallDirEnv, exists := os.LookupEnv("DOTNET_INSTALL_DIR")
+    if exists && dotNetInstallDirEnv != "" {
+        if fileExists(filepath.Join(dotNetInstallDirEnv, dotnet)) {
+            p1 := strings.TrimRight(strings.ToLower(dotNetInstallDirEnv), "\\/")
+            uniqueDotnetInstallDirs[p1] = nil
+        }
+    }
+
+    // 2
+    pathEnv, exists := os.LookupEnv("PATH")
+    if exists && pathEnv != "" {
+        pathDirs := strings.Split(pathEnv, ";")
+
+        for _, val := range pathDirs {
+            if fileExists(filepath.Join(val, dotnet)) {
+                p1 := strings.TrimRight(strings.ToLower(val), "\\/")
+                uniqueDotnetInstallDirs[p1] = nil
+            }
+        }
+    }
+
+    // Enumerate SDK, RUNTIME versions
+    var sdkList []string
+    var runtimeList []string
+    for val := range uniqueDotnetInstallDirs {
+        sdkPath := filepath.Join(val, "sdk")
+        runtimePath := filepath.Join(val, "shared")
+        var line string
+
+        dirs, err := os.ReadDir(sdkPath)
+        if err == nil {
+            for _, dir := range dirs {
+                if dir.Type().IsDir() {
+                    ver, err := semver.Make(dir.Name())
+                    if err == nil {
+                        line = "[SDK] " + ver.String() + " [" + filepath.Join(sdkPath, dir.Name()) + "]"
+                        sdkList = append(sdkList, line)
+                    }
+                }
+            }
+        }
+
+        dirs, err = os.ReadDir(runtimePath)
+        if err == nil {
+            for _, dir := range dirs {
+                if dir.Type().IsDir() {
+                    subs, err := os.ReadDir(filepath.Join(runtimePath, dir.Name()))
+                    if err == nil {
+                        for _, subd := range subs {
+                            ver, err := semver.Make(subd.Name())
+                            if err == nil {
+                                line := "[" + dir.Name() + "] " + ver.String() + " [" + filepath.Join(runtimePath, dir.Name()) + "]"
+                                runtimeList = append(runtimeList, line)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if !batchMode {
+        fmt.Println("\nCurrently installed .NET Core Versions in the system:")
+    }
+
+    for _, sdk := range sdkList {
+        fmt.Println(sdk)
+    }
+
+    for _, runtime := range runtimeList {
+        fmt.Println(runtime)
     }
 }
