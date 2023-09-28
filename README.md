@@ -11,6 +11,7 @@ Command line tool that shows the currently installed "classic" .NET versions in 
 
 1. GO 1.21.0
 2. golang.org/x/sys/windows/registry
+3. github.com/blang/semver/v4
 
 ## License
 
